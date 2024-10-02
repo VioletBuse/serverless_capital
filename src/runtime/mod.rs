@@ -99,6 +99,11 @@ impl Runtime {
             .call(scope, functionname.into(), params.as_slice())
             .unwrap();
 
+        let resulting_promise = v8::Local::<v8::Promise>::try_from(result).unwrap();
+        scope.perform_microtask_checkpoint();
+
+        let result = resulting_promise.result(scope);
+
         result.to_rust_string_lossy(scope)
     }
 }

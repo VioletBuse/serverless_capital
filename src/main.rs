@@ -7,8 +7,12 @@ mod tenant;
 fn main() {
     let script = r"
     export default {
-        event: (event, trading, storage) => {
-            return trading.tradingApiName;
+        event: async (event, trading, storage) => {
+            const prommy = new Promise((resolve, reject) => {
+                resolve(trading.tradingApiName)
+            });
+
+            return await prommy
         }
     }
     ";
