@@ -1,4 +1,5 @@
 
+
 ### Implemented WinterCG Minimum Common Api
 
 #### Interfaces:
@@ -47,7 +48,7 @@
 
 #### Global methods / properties:
 
-- [ ] globalThis
+- [x] globalThis
 - [x] globalThis.atob()
 - [x] globalThis.btoa()
 - [ ] globalThis.console

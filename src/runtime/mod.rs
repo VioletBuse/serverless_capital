@@ -1,8 +1,8 @@
-mod builtins;
 mod extensions;
 mod module_loader;
+mod utils;
 
-use std::{collections::HashMap, rc::Rc, sync::Arc};
+use std::{borrow::BorrowMut, collections::HashMap, rc::Rc, sync::Arc};
 
 use anyhow::anyhow;
 use deno_core::{
@@ -44,6 +44,18 @@ impl Runtime {
             ..Default::default()
         });
 
+        {
+            let scope = &mut js_runtime.handle_scope();
+            let current_context = scope.get_current_context();
+            let global = current_context.global(scope);
+
+            let key = deno_core::serde_v8::to_v8(scope, "tenant_id")?;
+            let tenant_id = deno_core::serde_v8::to_v8(scope, 46u64)?;
+            global.set(scope, key, tenant_id);
+        }
+
+        println!("ops {:#?}", js_runtime.op_names());
+
         let (event_handler, fetch_handler) = {
             let mod_id = js_runtime.load_main_es_module(&main_module).await?;
             let result = js_runtime.mod_evaluate(mod_id);
@@ -78,6 +90,30 @@ impl Runtime {
 
             (evt_handler, fetch_handler)
         };
+
+        let arg_1 = {
+            let scope = &mut js_runtime.handle_scope();
+
+            let arg_1 = v8::String::new(scope, "hello").unwrap();
+            let arg_1 = v8::Local::<v8::Value>::try_from(arg_1).unwrap();
+            let arg_1 = v8::Global::new(scope, arg_1);
+
+            arg_1
+        };
+
+        let fxn_call = js_runtime.call_with_args(&event_handler, &[arg_1]);
+
+        let fxn_result = js_runtime
+            .with_event_loop_promise(fxn_call, Default::default())
+            .await?;
+
+        {
+            let scope = &mut js_runtime.handle_scope();
+
+            let fxn_result = v8::Local::new(scope, fxn_result);
+
+            println!("function result {}", fxn_result.to_rust_string_lossy(scope));
+        }
 
         let handlers = Handlers {
             runtime: js_runtime,

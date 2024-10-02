@@ -4,15 +4,17 @@ use deno_core::{error::AnyError, extension, op2};
 
 extension!(
     atob_btoa,
+    deps = [dom_exception],
     ops = [atob, btoa],
     esm_entry_point = "ext:atob_btoa/atob_btoa.js",
-    esm = [dir "src/runtime/extensions", "atob_btoa.js"]
+    esm = [dir "src/runtime/extensions", "atob_btoa.js"],
+    // deps = [dom_exception]
 );
 
 #[op2]
 #[string]
 fn atob(#[string] ascii: String) -> Result<String, AnyError> {
-    Ok(base64::engine::general_purpose::STANDARD.encode(ascii.as_bytes()))
+    Ok(base64::engine::general_purpose::STANDARD.encode(ascii))
 }
 
 #[op2]
