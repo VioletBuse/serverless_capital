@@ -1,2 +1,4 @@
-#[derive(Debug, Clone)]
-pub struct Tenant {}
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub struct Tenant {
+    pub module: String,
+}

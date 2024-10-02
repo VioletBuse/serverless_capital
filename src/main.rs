@@ -4,23 +4,32 @@ mod backend;
 mod runtime;
 mod tenant;
 
-fn main() {
-    let script = r"
-    export default {
-        event: async (event, trading, storage) => {
-            const prommy = new Promise((resolve, reject) => {
-                resolve(trading.tradingApiName)
-            });
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // let script = r"
+    // export default {
+    //     event: async (event, trading, storage) => {
+    //         const prommy = new Promise((resolve, reject) => {
+    //             resolve(trading.tradingApiName)
+    //         });
 
-            return await prommy
-        }
-    }
-    ";
+    //         return await prommy
+    //     }
+    // }
+    // ";
 
-    println!("script: {}", script);
+    // println!("script: {}", script);
 
-    Runtime::initialize();
-    let result = Runtime::run(script);
+    let backend = backend::Backend {};
+    let runtime = Runtime::new(backend);
 
-    println!("result: {}", result);
+    let tenant = tenant::Tenant {
+        module: "./hello.ts".into(),
+    };
+
+    let result = runtime.initialize_isolate(tenant).await?;
+
+    println!("result: {:#?}", result);
+
+    Ok(())
 }

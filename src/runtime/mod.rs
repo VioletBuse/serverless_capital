@@ -1,109 +1,92 @@
-mod templates;
+mod builtins;
+mod extensions;
+mod module_loader;
 
-use std::{collections::HashMap, sync::Once};
+use std::{collections::HashMap, rc::Rc, sync::Arc};
 
-static INIT: Once = Once::new();
+use anyhow::anyhow;
+use deno_core::{
+    error::AnyError,
+    v8::{self, Handle},
+    JsRuntime,
+};
+use extensions::extensions_list;
+use tokio::sync::Mutex;
 
+use crate::{backend::Backend, tenant::Tenant};
+
+#[derive()]
+pub struct Handlers {
+    pub runtime: JsRuntime,
+    pub event: v8::Global<v8::Function>,
+    pub fetch: v8::Global<v8::Function>,
+}
+
+#[derive(Clone)]
 pub struct Runtime {
-    isolates: HashMap<u64, v8::OwnedIsolate>,
+    tenants: Arc<Mutex<HashMap<Tenant, Handlers>>>,
+    backend: Backend,
 }
 
 impl Runtime {
-    pub fn initialize() -> Self {
-        INIT.call_once(|| {
-            let platform = v8::new_default_platform(0, false).make_shared();
-            v8::V8::initialize_platform(platform);
-            v8::V8::initialize();
-        });
-
+    pub fn new(backend: Backend) -> Self {
         Self {
-            isolates: HashMap::new(),
+            tenants: Arc::new(Mutex::new(HashMap::new())),
+            backend,
         }
     }
-    pub fn run(source_code: &str) -> String {
-        let backend = crate::backend::Backend {};
-        let tenant = crate::tenant::Tenant {};
-        let event = templates::event::Event::YOLO;
+    pub async fn initialize_isolate(&self, tenant: Tenant) -> Result<(), AnyError> {
+        let main_module =
+            deno_core::resolve_path(tenant.module.clone(), &std::env::current_dir()?)?;
+        let mut js_runtime = deno_core::JsRuntime::new(deno_core::RuntimeOptions {
+            module_loader: Some(Rc::new(module_loader::SCModuleLoader::new())),
+            extensions: extensions_list(),
+            ..Default::default()
+        });
 
-        let isolate = &mut v8::Isolate::new(Default::default());
+        let (event_handler, fetch_handler) = {
+            let mod_id = js_runtime.load_main_es_module(&main_module).await?;
+            let result = js_runtime.mod_evaluate(mod_id);
 
-        let scope = &mut v8::HandleScope::new(isolate);
-        let context = v8::Context::new(scope, Default::default());
-        let scope = &mut v8::ContextScope::new(scope, context);
+            js_runtime.run_event_loop(Default::default()).await?;
 
-        let source = v8::String::new(scope, source_code).unwrap();
-        let script_name = v8::String::new(scope, "scwipt_lol").unwrap().into();
-        let script_origin = v8::ScriptOrigin::new(
-            scope,
-            script_name,
-            0,
-            0,
-            false,
-            0,
-            None,
-            false,
-            false,
-            true,
-            None,
-        );
+            result.await?;
 
-        let compile_source = &mut v8::script_compiler::Source::new(source, Some(&script_origin));
-        let module = v8::script_compiler::compile_module(scope, compile_source).unwrap();
+            let mod_namespace = js_runtime.get_module_namespace(mod_id)?;
+            let scope = &mut js_runtime.handle_scope();
+            let exports = v8::Local::new(scope, mod_namespace);
 
-        module
-            .instantiate_module(scope, |_, _, _, m| Some(m))
-            .unwrap();
-        module.evaluate(scope).unwrap();
+            let key = v8::String::new(scope, "default").unwrap();
+            let default = exports
+                .get(scope, key.into())
+                .ok_or(anyhow!("No default export"))?;
+            let default = v8::Local::<v8::Object>::try_from(default)?;
 
-        let default_key = v8::String::new(scope, "default").unwrap();
-        let default = module
-            .get_module_namespace()
-            .to_object(scope)
-            .unwrap()
-            .get(scope, default_key.into())
-            .unwrap()
-            .to_object(scope)
-            .unwrap();
+            let evt_handle_key = v8::String::new(scope, "event").unwrap();
+            let evt_handler = default
+                .get(scope, evt_handle_key.into())
+                .ok_or(anyhow!("No 'event' handler defined"))?;
+            let evt_handler = v8::Local::<v8::Function>::try_from(evt_handler)?;
+            let evt_handler = v8::Global::new(scope, evt_handler);
 
-        let globalkey = v8::String::new(scope, "hello").unwrap();
-        let value = v8::String::new(scope, "haiii >.<").unwrap();
-        context
-            .global(scope)
-            .set(scope, globalkey.into(), value.into());
+            let fetch_handle_key = v8::String::new(scope, "fetch").unwrap();
+            let fetch_handler = default
+                .get(scope, fetch_handle_key.into())
+                .ok_or(anyhow!("No 'fetch' handler defined"))?;
+            let fetch_handler = v8::Local::<v8::Function>::try_from(fetch_handler)?;
+            let fetch_handler = v8::Global::new(scope, fetch_handler);
 
-        let key = v8::String::new(scope, "event").unwrap();
-        let fxn = default.get(scope, key.into()).unwrap();
-        let function = v8::Local::<v8::Function>::try_from(fxn).unwrap();
+            (evt_handler, fetch_handler)
+        };
 
-        let functionname = v8::String::new(scope, "haii_funni_function_name").unwrap();
+        let handlers = Handlers {
+            runtime: js_runtime,
+            event: event_handler,
+            fetch: fetch_handler,
+        };
 
-        let event_object_template =
-            event.create_event_object_template(scope, backend.clone(), tenant.clone());
-        let event_object = event_object_template.new_instance(scope).unwrap();
+        self.tenants.try_lock().unwrap().insert(tenant, handlers);
 
-        let trading_object_template =
-            templates::trading::create_trading_api_template(scope, backend.clone(), tenant.clone());
-        let trading_object = trading_object_template.new_instance(scope).unwrap();
-
-        let storage_object_template =
-            templates::storage::create_storage_api_template(scope, backend.clone(), tenant.clone());
-        let storage_object = storage_object_template.new_instance(scope).unwrap();
-
-        let params: Vec<v8::Local<'_, v8::Value>> = vec![
-            event_object.into(),
-            trading_object.into(),
-            storage_object.into(),
-        ];
-
-        let result = function
-            .call(scope, functionname.into(), params.as_slice())
-            .unwrap();
-
-        let resulting_promise = v8::Local::<v8::Promise>::try_from(result).unwrap();
-        scope.perform_microtask_checkpoint();
-
-        let result = resulting_promise.result(scope);
-
-        result.to_rust_string_lossy(scope)
+        Ok(())
     }
 }
