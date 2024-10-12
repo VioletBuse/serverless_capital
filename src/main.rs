@@ -2,6 +2,7 @@ use runtime::Runtime;
 
 mod backend;
 mod runtime;
+mod services;
 mod tenant;
 
 #[tokio::main]
@@ -25,9 +26,10 @@ async fn main() -> anyhow::Result<()> {
 
     let tenant = tenant::Tenant {
         module: "./hello.ts".into(),
+        id: "tenant_id_jsd2387rhdishflsjdf".into(),
     };
 
-    let result = runtime.initialize_isolate(tenant).await?;
+    let result = runtime.run_event(&tenant).await;
 
     println!("result: {:#?}", result);
 

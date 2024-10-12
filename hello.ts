@@ -14,4 +14,6 @@ export default {
   fetch: async (trading) => {
     return 8;
   },
+  signal: async () => {},
+  scheduled: async () => {},
 };

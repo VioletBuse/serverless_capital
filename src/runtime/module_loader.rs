@@ -8,21 +8,25 @@ use deno_core::{
 };
 use std::fs;
 
+use crate::tenant::Tenant;
+
 type SourceMapStore = Rc<RefCell<HashMap<String, Vec<u8>>>>;
 
-pub struct SCModuleLoader {
+pub struct CustomModuleLoader {
+    tenant: Tenant,
     source_maps: SourceMapStore,
 }
 
-impl SCModuleLoader {
-    pub fn new() -> Self {
+impl CustomModuleLoader {
+    pub fn new(tenant: Tenant) -> Self {
         Self {
+            tenant,
             source_maps: Rc::new(RefCell::new(HashMap::new())),
         }
     }
 }
 
-impl ModuleLoader for SCModuleLoader {
+impl ModuleLoader for CustomModuleLoader {
     fn resolve(
         &self,
         specifier: &str,
