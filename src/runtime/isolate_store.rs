@@ -10,7 +10,7 @@ use crate::{backend::Backend, tenant::Tenant};
 
 use super::tenant_isolate::TenantIsolate;
 
-type Store = Arc<Vec<Mutex<HashMap<Tenant, TenantIsolate>>>>;
+type Store = Arc<Vec<Arc<Mutex<HashMap<Tenant, TenantIsolate>>>>>;
 
 #[derive(Clone)]
 pub struct IsolateStore {
@@ -23,7 +23,7 @@ impl IsolateStore {
         let mut db = Vec::with_capacity(shards);
 
         for _ in 0..shards {
-            db.push(Mutex::new(HashMap::new()));
+            db.push(Arc::new(Mutex::new(HashMap::new())));
         }
 
         Self {
@@ -32,7 +32,10 @@ impl IsolateStore {
         }
     }
     fn get_shard(&self, tenant: &Tenant) -> Arc<Mutex<HashMap<Tenant, TenantIsolate>>> {
-        self.store[hash(tenant) % self.store.len()].clone()
+        let shard_id = hash(tenant) % self.store.len();
+        let shard = self.store.iter().nth(shard_id).unwrap().clone();
+
+        return shard;
     }
     async fn delete_isolate(&self, tenant: &Tenant) {
         let shard = self.get_shard(tenant);

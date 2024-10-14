@@ -2,7 +2,6 @@ use runtime::Runtime;
 
 mod backend;
 mod runtime;
-mod services;
 mod tenant;
 
 #[tokio::main]
@@ -22,7 +21,7 @@ async fn main() -> anyhow::Result<()> {
     // println!("script: {}", script);
 
     let backend = backend::Backend {};
-    let runtime = Runtime::new(backend);
+    let runtime = Runtime::new(99, backend);
 
     let tenant = tenant::Tenant {
         module: "./hello.ts".into(),
